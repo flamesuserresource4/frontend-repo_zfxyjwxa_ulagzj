@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, XCircle, Printer, ScanLine, Shield } from 'lucide-react';
+import { CheckCircle2, XCircle, Printer, Shield, QrCode, Trash2, Users, Plus } from 'lucide-react';
 
 function Badge({ children, color = 'gray' }) {
   const colors = {
@@ -121,30 +121,64 @@ function PrintPreview({ permit, onClose }) {
   );
 }
 
-function AdminControls({ allowedRoles, setAllowedRoles, loginHistory }) {
+function AdminControls({ users, addUser, removeUser, loginHistory }) {
+  const [form, setForm] = useState({ username: '', password: '', role: 'User', section: 'Produksi' });
+  const roles = ['Superadmin', 'User', 'Pengawas', 'Security'];
+  const sections = ['Produksi', 'Keuangan', 'HR', 'Umum', 'Plant', 'ERS'];
+
   return (
-    <div className="rounded-xl border p-6 bg-white shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold flex items-center gap-2"><Shield size={18}/> Kontrol Akses (Superadmin)</h3>
+    <div className="rounded-xl border p-6 bg-white shadow-sm space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold flex items-center gap-2"><Shield size={18}/> Panel Superadmin</h3>
       </div>
+
       <div className="grid md:grid-cols-2 gap-6">
-        <div>
-          <h4 className="text-sm font-semibold mb-2">Peran Diizinkan</h4>
-          <div className="space-y-2">
-            {Object.keys(allowedRoles).map((r) => (
-              <label key={r} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={allowedRoles[r]} onChange={(e)=>setAllowedRoles(prev=>({...prev,[r]:e.target.checked}))} />
-                <span>{r}</span>
-              </label>
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold flex items-center gap-2"><Users size={16}/> Kelola Pengguna</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <input className="rounded-md border px-3 py-2" placeholder="Username" value={form.username} onChange={(e)=>setForm(v=>({...v, username:e.target.value}))} />
+            <input type="password" className="rounded-md border px-3 py-2" placeholder="Password" value={form.password} onChange={(e)=>setForm(v=>({...v, password:e.target.value}))} />
+            <select className="rounded-md border px-3 py-2" value={form.role} onChange={(e)=>setForm(v=>({...v, role:e.target.value}))}>
+              {roles.map(r=> <option key={r} value={r}>{r}</option>)}
+            </select>
+            <select className="rounded-md border px-3 py-2" value={form.section} onChange={(e)=>setForm(v=>({...v, section:e.target.value}))}>
+              {sections.map(s=> <option key={s} value={s}>{s}</option>)}
+            </select>
+            <div className="col-span-2 flex items-center justify-end">
+              <button
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+                onClick={() => {
+                  if (!form.username || !form.password) return;
+                  addUser({ ...form });
+                  setForm({ username: '', password: '', role: 'User', section: 'Produksi' });
+                }}
+              >
+                <Plus size={16}/> Tambah Pengguna
+              </button>
+            </div>
+          </div>
+          <div className="border rounded-md divide-y">
+            {users.length === 0 && <p className="p-3 text-sm text-gray-500">Belum ada pengguna.</p>}
+            {users.map((u) => (
+              <div key={u.username} className="p-3 text-sm flex items-center justify-between">
+                <div>
+                  <p className="font-medium">{u.username} <span className="text-gray-400">•</span> <span className="uppercase">{u.role}</span></p>
+                  <p className="text-gray-500 text-xs">Bagian: {u.section}</p>
+                </div>
+                <button className="inline-flex items-center gap-1 px-2 py-1 rounded-md border text-rose-600 hover:bg-rose-50" onClick={()=>removeUser(u.username)}>
+                  <Trash2 size={14}/> Hapus
+                </button>
+              </div>
             ))}
           </div>
         </div>
-        <div>
-          <h4 className="text-sm font-semibold mb-2">Riwayat Login</h4>
-          <div className="max-h-48 overflow-auto divide-y">
-            {loginHistory.length === 0 && <p className="text-sm text-gray-500">Belum ada riwayat.</p>}
+
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold">Riwayat Login</h4>
+          <div className="max-h-64 overflow-auto divide-y rounded-md border">
+            {loginHistory.length === 0 && <p className="p-3 text-sm text-gray-500">Belum ada riwayat.</p>}
             {loginHistory.map((h, idx) => (
-              <div key={idx} className="py-2 text-sm flex items-center justify-between">
+              <div key={idx} className="py-2 px-3 text-sm flex items-center justify-between">
                 <div>
                   <p className="font-medium">{h.name} <span className="text-gray-400">•</span> <span className="uppercase">{h.role}</span> <span className="text-gray-400">•</span> <span className="text-xs">{h.section}</span></p>
                   <p className="text-gray-500">{new Date(h.time).toLocaleString()}</p>
@@ -159,11 +193,13 @@ function AdminControls({ allowedRoles, setAllowedRoles, loginHistory }) {
   );
 }
 
-export default function ManagementBoard({ role, section, userName, permits, onApprove, onReject, onPrintSelect, selectedForPrint, onClosePrint, onScan, scanned, allowedRoles, setAllowedRoles, loginHistory }) {
+export default function ManagementBoard({ role, section, userName, permits, onApprove, onReject, onPrintSelect, selectedForPrint, onClosePrint, onScan, scanHistory, users, addUser, removeUser, loginHistory }) {
   const pending = useMemo(() => permits.filter(p => p.status === 'pending' && (role === 'Superadmin' || p.section === section)), [permits, section, role]);
   const mine = useMemo(() => permits.filter(p => p.requester === userName), [permits, userName]);
   const approved = useMemo(() => permits.filter(p => p.status === 'approved'), [permits]);
   const [scanCode, setScanCode] = useState('');
+  const [location, setLocation] = useState('Pintu 1');
+  const [scanNote, setScanNote] = useState('');
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-6 space-y-6">
@@ -200,35 +236,52 @@ export default function ManagementBoard({ role, section, userName, permits, onAp
       {(role === 'Security' || role === 'Superadmin') && (
         <div className="rounded-xl border p-6 bg-white shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold flex items-center gap-2"><ScanLine size={18}/> Verifikasi Security</h3>
+            <h3 className="font-semibold flex items-center gap-2"><QrCode size={18}/> Verifikasi Security</h3>
             <Badge color="blue">{approved.length} siap dilepas</Badge>
           </div>
           <div className="grid md:grid-cols-[1fr_1fr] gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Tempel/Scan Kode</label>
-              <div className="flex gap-2">
-                <input className="w-full rounded-md border px-3 py-2 font-mono" placeholder="Contoh: PERMIT-..." value={scanCode} onChange={(e)=>setScanCode(e.target.value)} />
-                <button onClick={()=>{ if(scanCode) { onScan(scanCode); setScanCode(''); } }} className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Verifikasi</button>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Lokasi Jaga</label>
+                <select className="w-full rounded-md border px-3 py-2" value={location} onChange={(e)=>setLocation(e.target.value)}>
+                  {['Pintu 1','Pintu 2','Gudang','Lobby'].map(l=>(<option key={l}>{l}</option>))}
+                </select>
               </div>
-              <p className="text-xs text-gray-500 mt-2">Masukkan kode dari QR untuk melihat detail dan menyetujui pelepasan.</p>
+              <div>
+                <label className="block text-sm font-medium mb-1">Tempel/Scan Kode</label>
+                <div className="flex gap-2">
+                  <input className="w-full rounded-md border px-3 py-2 font-mono" placeholder="Contoh: PERMIT-..." value={scanCode} onChange={(e)=>setScanCode(e.target.value)} />
+                  <button onClick={()=>{ if(scanCode) { onScan({ code: scanCode, location, note: scanNote }); setScanCode(''); setScanNote(''); } }} className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Verifikasi</button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Masukkan kode dari QR untuk melihat detail dan menyetujui pelepasan.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Catatan (opsional, contoh: barang tidak sesuai)</label>
+                <input className="w-full rounded-md border px-3 py-2" value={scanNote} onChange={(e)=>setScanNote(e.target.value)} placeholder="Tulis catatan jika ada ketidaksesuaian"/>
+              </div>
             </div>
             <div>
               <h4 className="text-sm font-semibold mb-2">Riwayat Scan Terakhir</h4>
-              <div className="max-h-40 overflow-auto space-y-2">
-                {scanned.length === 0 && <p className="text-sm text-gray-500">Belum ada scan.</p>}
-                {scanned.map((s, idx) => (
+              <div className="max-h-64 overflow-auto space-y-2">
+                {scanHistory.length === 0 && <p className="text-sm text-gray-500">Belum ada scan.</p>}
+                {scanHistory.map((s, idx) => (
                   <div key={idx} className="text-sm border rounded-md p-2">
                     <div className="flex items-center justify-between">
-                      <p className="font-medium">{s.permitId} <span className="text-gray-400">•</span> <span className="text-xs">{s.data.section}</span></p>
-                      <Badge color="blue">released</Badge>
+                      <p className="font-medium">{s.permitId} <span className="text-gray-400">•</span> <span className="text-xs">{s.location}</span></p>
+                      <Badge color={s.result==='released'?'blue':'red'}>{s.result}</Badge>
                     </div>
-                    <p className="text-gray-500">{new Date(s.time).toLocaleString()}</p>
-                    <p className="text-gray-700 mt-1">Pemohon: <span className="font-medium">{s.data.requester}</span></p>
-                    <ul className="list-disc pl-5 text-gray-700">
-                      {s.data.items.map((it, i)=> (
-                        <li key={i}>{it.name} (x{it.qty})</li>
-                      ))}
-                    </ul>
+                    <p className="text-gray-500">{new Date(s.time).toLocaleString()} <span className="text-gray-400">•</span> oleh {s.by}</p>
+                    {s.note && <p className="text-gray-700 mt-1">Catatan: {s.note}</p>}
+                    {s.data && (
+                      <>
+                        <p className="text-gray-700 mt-1">Pemohon: <span className="font-medium">{s.data.requester}</span> <span className="text-gray-400">•</span> Bagian: {s.data.section}</p>
+                        <ul className="list-disc pl-5 text-gray-700">
+                          {s.data.items.map((it, i)=> (
+                            <li key={i}>{it.name} (x{it.qty})</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -238,7 +291,7 @@ export default function ManagementBoard({ role, section, userName, permits, onAp
       )}
 
       {role === 'Superadmin' && (
-        <AdminControls allowedRoles={allowedRoles} setAllowedRoles={setAllowedRoles} loginHistory={loginHistory} />
+        <AdminControls users={users} addUser={addUser} removeUser={removeUser} loginHistory={loginHistory} />
       )}
 
       <PrintPreview permit={selectedForPrint} onClose={onClosePrint} />

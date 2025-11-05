@@ -33,31 +33,38 @@ function Hero() {
 }
 
 function App() {
-  const [userName, setUserName] = useState('');
-  const [role, setRole] = useState('');
-  const [section, setSection] = useState('');
+  // Database pengguna (dapat dikelola oleh Superadmin di panel Admin)
+  const [users, setUsers] = useState([
+    { username: 'Dana', password: 'Dana', role: 'Superadmin', section: 'ERS' },
+    { username: 'Abi', password: 'Abi', role: 'User', section: 'Plant' },
+    { username: 'Aba', password: 'Aba', role: 'Pengawas', section: 'Plant' },
+    { username: 'Abu', password: 'Abu', role: 'Security', section: 'ERS' },
+  ]);
+
+  const [currentUser, setCurrentUser] = useState(null);
   const [loginHistory, setLoginHistory] = useState([]);
   const [permits, setPermits] = useState([]);
   const [selectedForPrint, setSelectedForPrint] = useState(null);
-  const [scanned, setScanned] = useState([]);
-  const [allowedRoles, setAllowedRoles] = useState({ Superadmin: true, User: true, Pengawas: true, Security: true });
+  const [scanHistory, setScanHistory] = useState([]);
 
-  const canCreate = role === 'User' || role === 'Superadmin';
+  const canCreate = currentUser && (currentUser.role === 'User' || currentUser.role === 'Superadmin');
 
-  function handleLogin({ name, role, section }) {
-    setUserName(name);
-    setRole(role);
-    setSection(section);
-    setLoginHistory((h) => [{ name, role, section, time: Date.now() }, ...h]);
+  function handleLogin({ username, password }) {
+    const found = users.find((u) => u.username === username && u.password === password);
+    if (!found) {
+      alert('Username atau password salah.');
+      return;
+    }
+    setCurrentUser(found);
+    setLoginHistory((h) => [{ name: found.username, role: found.role, section: found.section, time: Date.now() }, ...h]);
   }
 
   function handleLogout() {
-    setUserName('');
-    setRole('');
-    setSection('');
+    setCurrentUser(null);
   }
 
   function handleCreatePermit(payload) {
+    if (!currentUser) return;
     const id = `IZN-${Date.now().toString(36).toUpperCase()}`;
     const qrCode = `PERMIT-${id}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
     const doc = {
@@ -68,8 +75,8 @@ function App() {
       destination: payload.destination,
       dateFrom: payload.dateFrom,
       dateTo: payload.dateTo,
-      requester: payload.requester,
-      section: payload.section,
+      requester: currentUser.username,
+      section: currentUser.section,
       status: 'pending',
       supervisorBy: null,
       supervisorNote: '',
@@ -80,10 +87,16 @@ function App() {
   }
 
   function handleApprove(id, note = '') {
-    setPermits((arr) => arr.map((p) => (p.id === id ? { ...p, status: 'approved', supervisorBy: userName, supervisorNote: note } : p)));
+    if (!currentUser) return;
+    setPermits((arr) =>
+      arr.map((p) => (p.id === id ? { ...p, status: 'approved', supervisorBy: currentUser.username, supervisorNote: note } : p))
+    );
   }
   function handleReject(id, note = '') {
-    setPermits((arr) => arr.map((p) => (p.id === id ? { ...p, status: 'rejected', supervisorBy: userName, supervisorNote: note } : p)));
+    if (!currentUser) return;
+    setPermits((arr) =>
+      arr.map((p) => (p.id === id ? { ...p, status: 'rejected', supervisorBy: currentUser.username, supervisorNote: note } : p))
+    );
   }
 
   function handlePrintSelect(permit) {
@@ -94,40 +107,64 @@ function App() {
     setSelectedForPrint(null);
   }
 
-  function handleScan(code) {
+  function handleScan({ code, location, note }) {
+    if (!currentUser) return;
     let found = null;
-    setPermits((arr) => arr.map((p) => {
-      if (p.qrCode === code && p.status === 'approved') {
-        found = p;
-        return { ...p, status: 'released', securityBy: userName };
-      }
-      return p;
-    }));
+    setPermits((arr) =>
+      arr.map((p) => {
+        if (p.qrCode === code && p.status === 'approved') {
+          found = p;
+          return { ...p, status: 'released', securityBy: currentUser.username };
+        }
+        return p;
+      })
+    );
+
+    const entryBase = {
+      by: currentUser.username,
+      location,
+      time: Date.now(),
+      note: note || '',
+    };
+
     if (found) {
-      setScanned((s) => [{ permitId: found.id, data: { requester: found.requester, section: found.section, items: found.items }, time: Date.now() }, ...s]);
+      setScanHistory((s) => [
+        { ...entryBase, result: 'released', permitId: found.id, data: { requester: found.requester, section: found.section, items: found.items } },
+        ...s,
+      ]);
+    } else {
+      setScanHistory((s) => [
+        { ...entryBase, result: 'invalid', permitId: code, data: null },
+        ...s,
+      ]);
+      alert('Kode tidak valid atau belum disetujui.');
     }
   }
 
-  const greeting = useMemo(() => (userName ? `Halo, ${userName}!` : 'Selamat datang!'), [userName]);
+  // Admin: kelola database pengguna
+  function addUser(user) {
+    setUsers((prev) => [user, ...prev]);
+  }
+  function removeUser(username) {
+    setUsers((prev) => prev.filter((u) => u.username !== username));
+  }
+
+  const greeting = useMemo(() => (currentUser ? `Halo, ${currentUser.username}!` : 'Selamat datang!'), [currentUser]);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <Header currentRole={role} userName={userName} onLogout={handleLogout} />
+      <Header currentRole={currentUser?.role} userName={currentUser?.username} onLogout={handleLogout} />
       <Hero />
 
-      {!userName && (
-        <LoginPanel onLogin={handleLogin} allowedRoles={allowedRoles} />
-      )}
+      {!currentUser && <LoginPanel onLogin={handleLogin} />}
 
-      {userName && (
+      {currentUser && (
         <>
-          {canCreate && (
-            <PermitForm onCreate={handleCreatePermit} requester={userName} section={section} />
-          )}
+          {canCreate && <PermitForm onCreate={handleCreatePermit} requester={currentUser.username} section={currentUser.section} />}
           <ManagementBoard
-            role={role}
-            section={section}
-            userName={userName}
+            role={currentUser.role}
+            section={currentUser.section}
+            userName={currentUser.username}
             permits={permits}
             onApprove={handleApprove}
             onReject={handleReject}
@@ -135,9 +172,10 @@ function App() {
             selectedForPrint={selectedForPrint}
             onClosePrint={handleClosePrint}
             onScan={handleScan}
-            scanned={scanned}
-            allowedRoles={allowedRoles}
-            setAllowedRoles={setAllowedRoles}
+            scanHistory={scanHistory}
+            users={users}
+            addUser={addUser}
+            removeUser={removeUser}
             loginHistory={loginHistory}
           />
         </>
