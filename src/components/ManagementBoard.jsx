@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, XCircle, Printer, ScanLine } from 'lucide-react';
+import { CheckCircle2, XCircle, Printer, ScanLine, Shield } from 'lucide-react';
 
 function Badge({ children, color = 'gray' }) {
   const colors = {
@@ -9,6 +9,7 @@ function Badge({ children, color = 'gray' }) {
     red: 'bg-red-100 text-red-800',
     blue: 'bg-blue-100 text-blue-800',
     indigo: 'bg-indigo-100 text-indigo-800',
+    violet: 'bg-violet-100 text-violet-800',
   };
   return <span className={`px-2 py-1 rounded text-xs font-medium ${colors[color]}`}>{children}</span>;
 }
@@ -28,27 +29,35 @@ function statusMeta(status) {
   }
 }
 
-function PermitCard({ permit, onApprove, onReject, onPrint }) {
+function PermitCard({ permit, role, onApprove, onReject, onPrint }) {
   const meta = statusMeta(permit.status);
+  const [note, setNote] = useState('');
   return (
     <div className="border rounded-lg p-4 bg-white flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h4 className="font-semibold">{permit.itemName}</h4>
+          <h4 className="font-semibold">{permit.items.map(it=>`${it.name} (x${it.qty})`).join(', ')}</h4>
           <Badge color={meta.color}>{meta.label}</Badge>
+          <Badge color="violet">{permit.section}</Badge>
         </div>
         <span className="text-xs text-gray-500">ID: {permit.id}</span>
       </div>
-      <p className="text-sm text-gray-600">Jumlah: <span className="font-medium text-gray-800">{permit.quantity}</span> • Tujuan: {permit.destination}</p>
-      <p className="text-sm text-gray-600">Pemohon: <span className="font-medium text-gray-800">{permit.requester}</span></p>
+      <p className="text-sm text-gray-600">Pemohon: <span className="font-medium text-gray-800">{permit.requester}</span> • Tujuan: {permit.destination}</p>
+      <p className="text-sm text-gray-600">Periode: <span className="font-medium text-gray-800">{permit.dateFrom}</span>{permit.dateTo && ` → ${permit.dateTo}`}</p>
+      {role === 'Pengawas' && permit.status === 'pending' && (
+        <div className="mt-1">
+          <label className="block text-xs font-medium mb-1">Catatan (opsional)</label>
+          <textarea value={note} onChange={(e)=>setNote(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" placeholder="Tulis catatan persetujuan/penolakan"/>
+        </div>
+      )}
       <div className="flex items-center gap-2 mt-2">
-        {onApprove && permit.status === 'pending' && (
-          <button onClick={() => onApprove(permit.id)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-sm hover:bg-emerald-700">
+        {onApprove && permit.status === 'pending' && role === 'Pengawas' && (
+          <button onClick={() => onApprove(permit.id, note)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-sm hover:bg-emerald-700">
             <CheckCircle2 size={16}/> Setujui
           </button>
         )}
-        {onReject && permit.status === 'pending' && (
-          <button onClick={() => onReject(permit.id)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-rose-600 text-white text-sm hover:bg-rose-700">
+        {onReject && permit.status === 'pending' && role === 'Pengawas' && (
+          <button onClick={() => onReject(permit.id, note)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-rose-600 text-white text-sm hover:bg-rose-700">
             <XCircle size={16}/> Tolak
           </button>
         )}
@@ -58,6 +67,9 @@ function PermitCard({ permit, onApprove, onReject, onPrint }) {
           </button>
         )}
       </div>
+      {permit.supervisorNote && (
+        <p className="text-xs text-gray-500">Catatan Pengawas: <span className="text-gray-700">{permit.supervisorNote}</span></p>
+      )}
     </div>
   );
 }
@@ -76,11 +88,19 @@ function PrintPreview({ permit, onClose }) {
             <div className="grid grid-cols-2 gap-2 text-sm">
               <p className="text-gray-500">ID</p><p className="font-medium">{permit.id}</p>
               <p className="text-gray-500">Pemohon</p><p className="font-medium">{permit.requester}</p>
-              <p className="text-gray-500">Barang</p><p className="font-medium">{permit.itemName} (x{permit.quantity})</p>
+              <p className="text-gray-500">Bagian</p><p className="font-medium">{permit.section}</p>
               <p className="text-gray-500">Keperluan</p><p className="font-medium">{permit.purpose}</p>
               <p className="text-gray-500">Tujuan</p><p className="font-medium">{permit.destination}</p>
               <p className="text-gray-500">Periode</p><p className="font-medium">{permit.dateFrom} {permit.dateTo && `→ ${permit.dateTo}`}</p>
               <p className="text-gray-500">Status</p><p className="font-medium">{statusMeta(permit.status).label}</p>
+            </div>
+            <div className="mt-4">
+              <p className="text-sm font-semibold mb-1">Barang</p>
+              <ul className="list-disc pl-5 text-sm text-gray-700">
+                {permit.items.map((it, i) => (
+                  <li key={i}>{it.name} (x{it.qty})</li>
+                ))}
+              </ul>
             </div>
           </div>
           <div className="border rounded-lg p-3 flex flex-col items-center justify-center">
@@ -101,8 +121,46 @@ function PrintPreview({ permit, onClose }) {
   );
 }
 
-export default function ManagementBoard({ role, userName, permits, onApprove, onReject, onPrintSelect, selectedForPrint, onClosePrint, onScan, scanned }) {
-  const pending = useMemo(() => permits.filter(p => p.status === 'pending'), [permits]);
+function AdminControls({ allowedRoles, setAllowedRoles, loginHistory }) {
+  return (
+    <div className="rounded-xl border p-6 bg-white shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold flex items-center gap-2"><Shield size={18}/> Kontrol Akses (Superadmin)</h3>
+      </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div>
+          <h4 className="text-sm font-semibold mb-2">Peran Diizinkan</h4>
+          <div className="space-y-2">
+            {Object.keys(allowedRoles).map((r) => (
+              <label key={r} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={allowedRoles[r]} onChange={(e)=>setAllowedRoles(prev=>({...prev,[r]:e.target.checked}))} />
+                <span>{r}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold mb-2">Riwayat Login</h4>
+          <div className="max-h-48 overflow-auto divide-y">
+            {loginHistory.length === 0 && <p className="text-sm text-gray-500">Belum ada riwayat.</p>}
+            {loginHistory.map((h, idx) => (
+              <div key={idx} className="py-2 text-sm flex items-center justify-between">
+                <div>
+                  <p className="font-medium">{h.name} <span className="text-gray-400">•</span> <span className="uppercase">{h.role}</span> <span className="text-gray-400">•</span> <span className="text-xs">{h.section}</span></p>
+                  <p className="text-gray-500">{new Date(h.time).toLocaleString()}</p>
+                </div>
+                <Badge color="indigo">#{String(idx + 1).padStart(3, '0')}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ManagementBoard({ role, section, userName, permits, onApprove, onReject, onPrintSelect, selectedForPrint, onClosePrint, onScan, scanned, allowedRoles, setAllowedRoles, loginHistory }) {
+  const pending = useMemo(() => permits.filter(p => p.status === 'pending' && (role === 'Superadmin' || p.section === section)), [permits, section, role]);
   const mine = useMemo(() => permits.filter(p => p.requester === userName), [permits, userName]);
   const approved = useMemo(() => permits.filter(p => p.status === 'approved'), [permits]);
   const [scanCode, setScanCode] = useState('');
@@ -118,7 +176,7 @@ export default function ManagementBoard({ role, userName, permits, onApprove, on
           <div className="grid md:grid-cols-2 gap-4">
             {mine.length === 0 && <p className="text-sm text-gray-500">Belum ada pengajuan.</p>}
             {mine.map((p) => (
-              <PermitCard key={p.id} permit={p} onPrint={onPrintSelect} />
+              <PermitCard key={p.id} role={role} permit={p} onPrint={onPrintSelect} />
             ))}
           </div>
         </div>
@@ -127,13 +185,13 @@ export default function ManagementBoard({ role, userName, permits, onApprove, on
       {(role === 'Pengawas' || role === 'Superadmin') && (
         <div className="rounded-xl border p-6 bg-white shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Menunggu Persetujuan</h3>
+            <h3 className="font-semibold">Menunggu Persetujuan (Bagian {role==='Superadmin'?'Semua':section})</h3>
             <Badge color="yellow">{pending.length} pending</Badge>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             {pending.length === 0 && <p className="text-sm text-gray-500">Tidak ada data menunggu.</p>}
             {pending.map((p) => (
-              <PermitCard key={p.id} permit={p} onApprove={onApprove} onReject={onReject} />
+              <PermitCard key={p.id} role={role} permit={p} onApprove={onApprove} onReject={onReject} />
             ))}
           </div>
         </div>
@@ -152,25 +210,35 @@ export default function ManagementBoard({ role, userName, permits, onApprove, on
                 <input className="w-full rounded-md border px-3 py-2 font-mono" placeholder="Contoh: PERMIT-..." value={scanCode} onChange={(e)=>setScanCode(e.target.value)} />
                 <button onClick={()=>{ if(scanCode) { onScan(scanCode); setScanCode(''); } }} className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Verifikasi</button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">Masukkan kode dari QR untuk menyetujui pelepasan.</p>
+              <p className="text-xs text-gray-500 mt-2">Masukkan kode dari QR untuk melihat detail dan menyetujui pelepasan.</p>
             </div>
             <div>
               <h4 className="text-sm font-semibold mb-2">Riwayat Scan Terakhir</h4>
               <div className="max-h-40 overflow-auto space-y-2">
                 {scanned.length === 0 && <p className="text-sm text-gray-500">Belum ada scan.</p>}
                 {scanned.map((s, idx) => (
-                  <div key={idx} className="text-sm border rounded-md p-2 flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{s.permitId}</p>
-                      <p className="text-gray-500">{new Date(s.time).toLocaleString()}</p>
+                  <div key={idx} className="text-sm border rounded-md p-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium">{s.permitId} <span className="text-gray-400">•</span> <span className="text-xs">{s.data.section}</span></p>
+                      <Badge color="blue">released</Badge>
                     </div>
-                    <Badge color="blue">released</Badge>
+                    <p className="text-gray-500">{new Date(s.time).toLocaleString()}</p>
+                    <p className="text-gray-700 mt-1">Pemohon: <span className="font-medium">{s.data.requester}</span></p>
+                    <ul className="list-disc pl-5 text-gray-700">
+                      {s.data.items.map((it, i)=> (
+                        <li key={i}>{it.name} (x{it.qty})</li>
+                      ))}
+                    </ul>
                   </div>
                 ))}
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {role === 'Superadmin' && (
+        <AdminControls allowedRoles={allowedRoles} setAllowedRoles={setAllowedRoles} loginHistory={loginHistory} />
       )}
 
       <PrintPreview permit={selectedForPrint} onClose={onClosePrint} />

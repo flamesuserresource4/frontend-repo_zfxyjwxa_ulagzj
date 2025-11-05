@@ -11,10 +11,10 @@ function Hero() {
         <div className="grid md:grid-cols-2 gap-8 items-center">
           <div>
             <h2 className="text-2xl md:text-3xl font-semibold leading-tight">Sistem Izin Membawa Barang</h2>
-            <p className="mt-3 text-gray-600">Alur lengkap: Pengajuan oleh User → Persetujuan Pengawas → Cetak kartu izin dengan QR → Verifikasi pelepasan oleh Security.</p>
+            <p className="mt-3 text-gray-600">Alur lengkap: Pengajuan oleh User → Persetujuan Pengawas (satu bagian/section) → Cetak kartu izin dengan QR → Verifikasi pelepasan oleh Security.</p>
             <ul className="mt-4 text-sm text-gray-700 space-y-1 list-disc pl-5">
               <li>Login multi-peran: Superadmin, User, Pengawas, Security</li>
-              <li>Riwayat login tersimpan di halaman</li>
+              <li>Pengawas hanya memproses pengajuan dari bagian yang sama</li>
               <li>Kartu izin siap cetak dengan kode verifikasi</li>
             </ul>
           </div>
@@ -24,7 +24,7 @@ function Hero() {
               <div className="p-3 rounded-lg bg-emerald-50 border"><p className="font-semibold">Persetujuan</p><p className="text-emerald-700">Pengawas</p></div>
               <div className="p-3 rounded-lg bg-blue-50 border"><p className="font-semibold">Pelepasan</p><p className="text-blue-700">Security</p></div>
             </div>
-            <p className="mt-3 text-xs text-gray-500 text-center">Gunakan login sesuai peran untuk mencoba alur di bawah.</p>
+            <p className="mt-3 text-xs text-gray-500 text-center">Gunakan login sesuai peran & bagian untuk mencoba alur di bawah.</p>
           </div>
         </div>
       </div>
@@ -35,22 +35,26 @@ function Hero() {
 function App() {
   const [userName, setUserName] = useState('');
   const [role, setRole] = useState('');
+  const [section, setSection] = useState('');
   const [loginHistory, setLoginHistory] = useState([]);
   const [permits, setPermits] = useState([]);
   const [selectedForPrint, setSelectedForPrint] = useState(null);
   const [scanned, setScanned] = useState([]);
+  const [allowedRoles, setAllowedRoles] = useState({ Superadmin: true, User: true, Pengawas: true, Security: true });
 
   const canCreate = role === 'User' || role === 'Superadmin';
 
-  function handleLogin({ name, role }) {
+  function handleLogin({ name, role, section }) {
     setUserName(name);
     setRole(role);
-    setLoginHistory((h) => [{ name, role, time: Date.now() }, ...h]);
+    setSection(section);
+    setLoginHistory((h) => [{ name, role, section, time: Date.now() }, ...h]);
   }
 
   function handleLogout() {
     setUserName('');
     setRole('');
+    setSection('');
   }
 
   function handleCreatePermit(payload) {
@@ -59,26 +63,27 @@ function App() {
     const doc = {
       id,
       qrCode,
-      itemName: payload.itemName,
-      quantity: payload.quantity,
+      items: payload.items,
       purpose: payload.purpose,
       destination: payload.destination,
       dateFrom: payload.dateFrom,
       dateTo: payload.dateTo,
       requester: payload.requester,
+      section: payload.section,
       status: 'pending',
       supervisorBy: null,
+      supervisorNote: '',
       securityBy: null,
       createdAt: Date.now(),
     };
     setPermits((arr) => [doc, ...arr]);
   }
 
-  function handleApprove(id) {
-    setPermits((arr) => arr.map((p) => (p.id === id ? { ...p, status: 'approved', supervisorBy: userName } : p)));
+  function handleApprove(id, note = '') {
+    setPermits((arr) => arr.map((p) => (p.id === id ? { ...p, status: 'approved', supervisorBy: userName, supervisorNote: note } : p)));
   }
-  function handleReject(id) {
-    setPermits((arr) => arr.map((p) => (p.id === id ? { ...p, status: 'rejected', supervisorBy: userName } : p)));
+  function handleReject(id, note = '') {
+    setPermits((arr) => arr.map((p) => (p.id === id ? { ...p, status: 'rejected', supervisorBy: userName, supervisorNote: note } : p)));
   }
 
   function handlePrintSelect(permit) {
@@ -99,7 +104,7 @@ function App() {
       return p;
     }));
     if (found) {
-      setScanned((s) => [{ permitId: found.id, time: Date.now() }, ...s]);
+      setScanned((s) => [{ permitId: found.id, data: { requester: found.requester, section: found.section, items: found.items }, time: Date.now() }, ...s]);
     }
   }
 
@@ -111,16 +116,17 @@ function App() {
       <Hero />
 
       {!userName && (
-        <LoginPanel onLogin={handleLogin} loginHistory={loginHistory} />
+        <LoginPanel onLogin={handleLogin} allowedRoles={allowedRoles} />
       )}
 
       {userName && (
         <>
           {canCreate && (
-            <PermitForm onCreate={handleCreatePermit} requester={userName} />
+            <PermitForm onCreate={handleCreatePermit} requester={userName} section={section} />
           )}
           <ManagementBoard
             role={role}
+            section={section}
             userName={userName}
             permits={permits}
             onApprove={handleApprove}
@@ -130,6 +136,9 @@ function App() {
             onClosePrint={handleClosePrint}
             onScan={handleScan}
             scanned={scanned}
+            allowedRoles={allowedRoles}
+            setAllowedRoles={setAllowedRoles}
+            loginHistory={loginHistory}
           />
         </>
       )}
